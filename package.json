@@ -1,0 +1,10 @@
+{
+  "name": "boundless-identity-sdk-monorepo",
+  "private": true,
+  "scripts": {
+    "build": "pnpm -r build",
+    "test": "pnpm -r test",
+    "dev": "pnpm -r dev"
+  },
+  "packageManager": "pnpm@9.0.0"
+}
