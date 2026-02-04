@@ -1,66 +1,56 @@
 import type { BetterAuthPlugin } from "better-auth";
+import { createAuthEndpoint, getSessionFromCtx } from "better-auth/api";
+import { z } from "zod";
 
-export const boundlessStellarPlugin = (): BetterAuthPlugin =>
-  ({
+export const boundlessStellarPlugin = () => {
+  return {
     id: "boundless-stellar",
 
     schema: {
       user: {
         fields: {
-          stellarAddress: {
-            type: "string",
-            required: false,
-            unique: true,
-          },
-          credentialId: {
-            type: "string",
-            required: false,
-          },
+          stellarAddress: { type: "string", required: false, input: false },
+          credentialId: { type: "string", required: false, input: false }, // From WebAuthn
         },
       },
     },
-
     endpoints: {
-      linkStellar: {
-        path: "/stellar/link",
-        method: ["POST"],
-        handler: async (ctx: any) => {
-          // ctx is the Better-Auth handler context.
-          // ctx.request.body contains the parsed JSON.
-          // ctx.context.db  is the database adapter.
-          // ctx.context.session.user is the authenticated user (or null).
-
-          const session = await ctx.context.auth.getSession(ctx.request);
-          if (!session?.user) {
-            return ctx.json({ error: "Unauthorized" }, { status: 401 });
-          }
-
-          const body = ctx.request.body as { stellarAddress?: unknown };
-          const { stellarAddress } = body;
-
-          // Validate C-address format
-          if (
-            typeof stellarAddress !== "string" ||
-            stellarAddress.length !== 56 ||
-            !stellarAddress.startsWith("C")
-          ) {
+      linkStellarAccount: createAuthEndpoint(
+        "/stellar/link",
+        {
+          method: "POST",
+          body: z.object({
+            stellarAddress: z
+              .string()
+              .min(56)
+              .max(56)
+              .regex(/^C[A-Z0-9]{55}$/, "Invalid Stellar address format"),
+            credentialId: z.string().min(1, "Credential ID is required"),
+          }),
+        },
+        async (ctx) => {
+          const session = await getSessionFromCtx(ctx);
+          console.log(session);
+          if (!session) {
             return ctx.json(
-              {
-                error:
-                  "Invalid stellarAddress. Must be a 56-char Soroban contract ID starting with C.",
-              },
-              { status: 400 },
+              { success: false, error: "Unauthorized" },
+              { status: 401 },
             );
           }
 
-          // Persist
-          await ctx.context.db.update("user", {
-            where: { id: session.user.id },
-            update: { stellarAddress },
-          });
+          const { stellarAddress, credentialId } = ctx.body;
 
+          await ctx.context.adapter.update({
+            model: "user",
+            where: [{ field: "id", value: session.user.id }],
+            update: {
+              stellarAddress,
+              credentialId,
+            },
+          });
           return ctx.json({ success: true });
         },
-      },
+      ),
     },
-  }) as any;
+  } satisfies BetterAuthPlugin;
+};

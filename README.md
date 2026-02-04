@@ -1,17 +1,17 @@
-# @boundless/identity-sdk
+# @boundlessfi/identity-sdk
 
 A TypeScript SDK that wraps `smart-account-kit` to provide passkey-powered smart-wallet authentication for the Boundless platform with zero seed phrases.
 
 ## Install
 
 ```bash
-pnpm add @boundless/identity-sdk
+pnpm add @boundlessfi/identity-sdk
 ```
 
 ## Quick Start
 
 ```typescript
-import { BoundlessSDK } from '@boundless/identity-sdk';
+import { BoundlessSDK } from '@boundlessfi/identity-sdk';
 
 const sdk = new BoundlessSDK({
   network: 'testnet',
@@ -46,7 +46,7 @@ Enables linking Stellar wallets to Better-Auth sessions.
 ```typescript
 // boundless-backend/src/auth.ts
 import { betterAuth } from 'better-auth';
-import { boundlessStellarPlugin } from '@boundless/identity-sdk/server';
+import { boundlessStellarPlugin } from '@boundlessfi/identity-sdk/server';
 
 export const auth = betterAuth({
   database: db,

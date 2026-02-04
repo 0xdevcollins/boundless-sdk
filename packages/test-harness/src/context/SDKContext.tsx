@@ -6,7 +6,7 @@ import {
   useCallback,
   ReactNode,
 } from "react";
-import { BoundlessSDK } from "@boundless/identity-sdk";
+import { BoundlessSDK } from "@boundlessfi/identity-sdk";
 
 export const KNOWN_ASSETS = [
   {

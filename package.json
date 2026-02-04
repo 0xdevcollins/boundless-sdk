@@ -5,7 +5,7 @@
     "build": "pnpm -r build",
     "test": "pnpm -r test",
     "dev": "pnpm -r dev",
-    "publish:sdk": "pnpm --filter @boundless/identity-sdk publish --access public"
+    "publish:sdk": "pnpm --filter @boundlessfi/identity-sdk publish --access public"
   },
   "packageManager": "pnpm@9.0.0"
 }

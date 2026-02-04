@@ -1,5 +1,5 @@
 import React from "react";
-import { NETWORK_CONFIGS } from "@boundless/identity-sdk";
+import { NETWORK_CONFIGS } from "@boundlessfi/identity-sdk";
 import { useSDK } from "../../context/SDKContext";
 
 export const FundWallet: React.FC = () => {

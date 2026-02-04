@@ -138,7 +138,11 @@ export class BoundlessSDK {
     });
 
     // 2. Link to Better-Auth session
-    await this.linkToSession(result.contractId);
+    // We expect credentialId to be present for new registrations via SmartAccountKit
+    if (!result.credentialId) {
+      console.warn("No credentialId returned from createWallet for new user.");
+    }
+    await this.linkToSession(result.contractId, result.credentialId || "");
 
     this._walletAddress = result.contractId;
 
@@ -153,7 +157,10 @@ export class BoundlessSDK {
   /**
    * Link a Stellar wallet address to the currently authenticated user session.
    */
-  private async linkToSession(contractId: string): Promise<void> {
+  private async linkToSession(
+    contractId: string,
+    credentialId: string,
+  ): Promise<void> {
     // 1. Check session
     const res = await this.authClient.getSession();
     const session = res?.data;
@@ -173,7 +180,10 @@ export class BoundlessSDK {
       headers: {
         "Content-Type": "application/json",
       },
-      body: JSON.stringify({ stellarAddress: contractId }),
+      body: JSON.stringify({
+        stellarAddress: contractId,
+        credentialId: credentialId,
+      }),
       // Credentials include cookies for the session
       credentials: "include",
     });
