@@ -8,25 +8,24 @@
   "exports": {
     ".": {
       "import": "./dist/index.js",
-      "require": "./dist/index.cjs",
       "types": "./dist/index.d.ts"
     },
     "./server": {
       "import": "./dist/server/index.js",
-      "require": "./dist/server/index.cjs",
       "types": "./dist/server/index.d.ts"
     }
   },
   "dependencies": {
-    "smart-account-kit": "latest",
-    "better-auth": "latest"
+    "@stellar/stellar-sdk": "^14.5.0",
+    "better-auth": "latest",
+    "smart-account-kit": "latest"
   },
   "peerDependencies": {
     "smart-account-kit": ">=1.0.0"
   },
   "devDependencies": {
-    "typescript": "^5.4",
-    "tsx": "^4.7"
+    "tsx": "^4.7",
+    "typescript": "^5.4"
   },
   "scripts": {
     "build": "tsc",

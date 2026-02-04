@@ -2,7 +2,18 @@ import {
   SmartAccountKit,
   IndexedDBStorage,
   WalletNotConnectedError,
+  STROOPS_PER_XLM,
 } from "smart-account-kit";
+import {
+  rpc,
+  Asset,
+  Address,
+  Contract,
+  Account,
+  TransactionBuilder,
+  scValToNative,
+  TimeoutInfinite,
+} from "@stellar/stellar-sdk";
 import type { AssembledTransaction } from "smart-account-kit";
 import { createAuthClient } from "better-auth/client";
 import { inferAdditionalFields } from "better-auth/client/plugins";
@@ -20,9 +31,13 @@ import type {
   BoundlessEventHandler,
 } from "./types";
 
+// Valid G-address for simulation source (USDC Issuer)
+const DUMMY_SOURCE = "GBBD47IF6LWK7P7MDEVSCWR7DPUWV3NY3DTQEVFL4NAT4AQH3ZLLFLA5";
+
 export class BoundlessSDK {
   private config: BoundlessSdkConfig;
   private kit: SmartAccountKit;
+  private _walletAddress: string | null = null;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   private authClient: any; // typed via createAuthClient return
 
@@ -62,6 +77,13 @@ export class BoundlessSDK {
   }
 
   /**
+   * Access the underlying SmartAccountKit instance for advanced usage.
+   */
+  get smartAccountKit(): SmartAccountKit {
+    return this.kit;
+  }
+
+  /**
    * Connect to an existing passkey wallet.
    * If prompt is true, forces the browser passkey selection UI.
    * Does NOT deploy a new wallet.
@@ -80,6 +102,7 @@ export class BoundlessSDK {
     let result = await this.kit.connectWallet();
 
     if (result) {
+      this._walletAddress = result.contractId;
       return {
         walletAddress: result.contractId,
         credentialId: (result as any).credentialId || "",
@@ -90,6 +113,7 @@ export class BoundlessSDK {
     if (prompt) {
       result = await this.kit.connectWallet({ prompt: true });
       if (result) {
+        this._walletAddress = result.contractId;
         return {
           walletAddress: result.contractId,
           credentialId: (result as any).credentialId || "",
@@ -115,6 +139,8 @@ export class BoundlessSDK {
 
     // 2. Link to Better-Auth session
     await this.linkToSession(result.contractId);
+
+    this._walletAddress = result.contractId;
 
     // 3. Return result
     return {
@@ -176,11 +202,166 @@ export class BoundlessSDK {
   }
 
   /**
+   * Fetch the balance of the connected wallet (or any specific address).
+   * By default, fetches native XLM balance.
+   * If assetCode (and issuer) is provided, fetches that asset's balance.
+   * If assetCode starts with 'C', it is treated as a contract ID.
+   */
+  async getBalance(
+    address: string,
+    assetCode = "XLM",
+    assetIssuer?: string,
+  ): Promise<string> {
+    if (!address) return "0.00";
+
+    const networkConfig = NETWORK_CONFIGS[this.config.network];
+    const server = new rpc.Server(
+      this.config.rpcUrl || networkConfig.defaultRpcUrl,
+    );
+
+    // 1. Native Balance
+    if (assetCode === "XLM") {
+      try {
+        const result = await server.getSACBalance(
+          networkConfig.nativeTokenContract,
+          Asset.native(),
+          networkConfig.networkPassphrase,
+        );
+        if (result.balanceEntry) {
+          return (Number(result.balanceEntry.amount) / STROOPS_PER_XLM).toFixed(
+            2,
+          );
+        }
+        return "0.00";
+      } catch (e) {
+        console.error("Error fetching native balance:", e);
+        return "0.00";
+      }
+    }
+
+    // 2. Custom Token Balance
+    let targetContractId = assetCode;
+
+    // Resolve Contract ID
+    if (assetCode.includes(":")) {
+      // CODE:ISSUER
+      const [code, issuer] = assetCode.split(":");
+      try {
+        const asset = new Asset(code, issuer);
+        targetContractId = asset.contractId(networkConfig.networkPassphrase);
+      } catch (e) {
+        console.error(`Invalid asset format: ${assetCode}`, e);
+        return "0";
+      }
+    } else if (assetIssuer) {
+      // Explicit Code + Issuer
+      try {
+        const asset = new Asset(assetCode, assetIssuer);
+        targetContractId = asset.contractId(networkConfig.networkPassphrase);
+      } catch (e) {
+        console.error(`Failed to derive contract for ${assetCode}`, e);
+        return "0";
+      }
+    } else if (!assetCode.startsWith("C")) {
+      // If it's just "USDC" without issuer, we might need a known list or fail.
+      // For SDK, we assume the user must provide enough info.
+      // However, if the user passes a contract address directly, we use it.
+      // Check if it's a valid contract address?
+      // For now, we assume if it's 56 chars starting with C, it's a contract.
+      // If not, we can't guess.
+      // But we'll try to treat it as a contract ID if it looks like one.
+      if (!assetCode.startsWith("C") || assetCode.length !== 56) {
+        console.warn(
+          "getBalance: Asset code must be XLM, C... contract ID, or CODE:ISSUER",
+        );
+        return "0";
+      }
+    }
+
+    try {
+      // Simulate Balance Call
+      // Use DUMMY_SOURCE for simulation to avoid accountId errors with Smart Accounts
+      const sourceAccount = new Account(DUMMY_SOURCE, "0");
+
+      const tokenContract = new Contract(targetContractId);
+      const op = tokenContract.call("balance", new Address(address).toScVal());
+
+      const tx = new TransactionBuilder(sourceAccount, {
+        fee: "100",
+        networkPassphrase: networkConfig.networkPassphrase,
+      })
+        .addOperation(op)
+        .setTimeout(TimeoutInfinite)
+        .build();
+
+      const sim = await server.simulateTransaction(tx);
+
+      if (
+        rpc.Api.isSimulationSuccess(sim) &&
+        sim.result &&
+        "retval" in sim.result
+      ) {
+        const val = scValToNative(sim.result.retval);
+        // Default formatting: Assume 7 decimals for now or return raw?
+        // Returning human-readable for convenience.
+        // Most Stellar tokens are 7 decimals.
+        return (Number(val) / 1e7).toFixed(2);
+      }
+    } catch (e) {
+      console.error(`Error fetching token balance for ${assetCode}:`, e);
+    }
+
+    return "0";
+  }
+
+  /**
+   * Transfer funds (XLM or Token).
+   * Automatically resolves Asset-to-Contract if needed.
+   */
+  async transfer(
+    to: string,
+    amount: string | number,
+    assetCode = "XLM",
+    assetIssuer?: string,
+  ): Promise<SignAndSubmitResult> {
+    const networkConfig = NETWORK_CONFIGS[this.config.network];
+    let tokenContract: string = networkConfig.nativeTokenContract;
+
+    if (assetCode !== "XLM") {
+      if (assetCode.startsWith("C") && assetCode.length === 56) {
+        tokenContract = assetCode;
+      } else if (assetCode.includes(":")) {
+        const [code, issuer] = assetCode.split(":");
+        const asset = new Asset(code, issuer);
+        tokenContract = asset.contractId(networkConfig.networkPassphrase);
+      } else if (assetIssuer) {
+        const asset = new Asset(assetCode, assetIssuer);
+        tokenContract = asset.contractId(networkConfig.networkPassphrase);
+      } else {
+        throw new Error(
+          "Invalid asset specifier. Use XLM, Contract ID, or Code + Issuer.",
+        );
+      }
+    }
+
+    const amountNum = typeof amount === "string" ? parseFloat(amount) : amount;
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const result = await this.kit.transfer(tokenContract as any, to, amountNum);
+
+    return {
+      hash: result.hash,
+      success: result.success,
+    };
+  }
+
+  /**
    * Disconnect the wallet (clear local session).
    * Does NOT sign out of Better-Auth.
    */
   async disconnect(): Promise<void> {
     await this.kit.disconnect();
+    this._walletAddress = null;
   }
 
   /**
@@ -228,7 +409,7 @@ export class BoundlessSDK {
     // I'll cast for now to avoid blocking if the types aren't exactly matching my assumption.
     // "Read from the session state that SmartAccountKit maintains internally"
 
-    return (this.kit as any).address || null;
+    return this._walletAddress || (this.kit as any).address || null;
   }
 
   /**
