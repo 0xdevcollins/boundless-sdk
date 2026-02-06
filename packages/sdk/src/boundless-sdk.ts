@@ -61,10 +61,26 @@ export class BoundlessSDK {
     });
 
     // 3. Create Better-Auth client
+    // Normalize backend URL: remove trailing /api or /api/auth
+    let normalizedBackendUrl = config.backendUrl.replace(/\/$/, "");
+    if (normalizedBackendUrl.endsWith("/api/auth")) {
+      normalizedBackendUrl = normalizedBackendUrl.substring(
+        0,
+        normalizedBackendUrl.length - 9,
+      );
+    } else if (normalizedBackendUrl.endsWith("/api")) {
+      normalizedBackendUrl = normalizedBackendUrl.substring(
+        0,
+        normalizedBackendUrl.length - 4,
+      );
+    }
+    // Update config with normalized URL for internal use
+    this.config.backendUrl = normalizedBackendUrl;
+
     // We cannot do `typeof auth` inference across packages easily without importing backend code.
     // inferAdditionalFields is the standard polyrepo pattern.
     this.authClient = createAuthClient({
-      baseURL: config.backendUrl,
+      baseURL: normalizedBackendUrl,
       basePath: "/api/auth",
       plugins: [
         inferAdditionalFields({
