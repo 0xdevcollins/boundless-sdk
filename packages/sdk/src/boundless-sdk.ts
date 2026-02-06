@@ -65,6 +65,7 @@ export class BoundlessSDK {
     // inferAdditionalFields is the standard polyrepo pattern.
     this.authClient = createAuthClient({
       baseURL: config.backendUrl,
+      basePath: "/api/auth",
       plugins: [
         inferAdditionalFields({
           user: {
